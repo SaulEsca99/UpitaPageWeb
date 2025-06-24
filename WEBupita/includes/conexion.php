@@ -2,7 +2,7 @@
 $host = 'localhost';
 $db   = 'upiita';
 $user = 'root';
-$pass = 'Conor$100'; // si usas contraseña, colócala aquí
+$pass = 'tired2019'; // si usas contraseña, colócala aquí
 $charset = 'utf8mb4';
 
 try {
