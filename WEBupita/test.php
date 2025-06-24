@@ -16,7 +16,7 @@ try {
     $pdo = new PDO("mysql:host=localhost;dbname=upiita", "root", "tired2019");
     echo "<p>✅ Conexión a base de datos exitosa</p>";
 
-    // Verificar tablas
+    // Verificar tabla
     $stmt = $pdo->query("SHOW TABLES");
     $tables = $stmt->fetchAll(PDO::FETCH_COLUMN);
     echo "<p>Tablas encontradas: " . count($tables) . "</p>";

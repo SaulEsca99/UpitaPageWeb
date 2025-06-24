@@ -1,10 +1,13 @@
 <?php
 // Ruta: WEBupita/api/rutas_favoritas.php
 
-session_start();
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET, POST, DELETE');
+header('Access-Control-Allow-Methods: GET, POST, DELETE, PUT');
 header('Access-Control-Allow-Headers: Content-Type');
 
 require_once '../includes/conexion.php';
@@ -61,15 +64,15 @@ try {
                     WHERE id = ? AND usuario_id = ?
                 ");
 
-                $resultado = $stmt->execute([$nombreRuta, $rutaId, $usuarioId]);
+                $resultado = $stmt->execute([trim($nombreRuta), $rutaId, $usuarioId]);
 
-                if ($resultado) {
+                if ($resultado && $stmt->rowCount() > 0) {
                     echo json_encode([
                         'success' => true,
                         'mensaje' => 'Nombre de ruta actualizado exitosamente'
                     ]);
                 } else {
-                    throw new Exception('Error al actualizar el nombre de la ruta');
+                    throw new Exception('No se encontró la ruta o no tienes permisos para modificarla');
                 }
 
             } else {
@@ -84,13 +87,25 @@ try {
                     throw new Exception('Datos incompletos para guardar la ruta favorita');
                 }
 
+                // Validar que no exista una ruta favorita idéntica para el usuario
+                $stmt = $pdo->prepare("
+                    SELECT COUNT(*) FROM RutasFavoritas 
+                    WHERE usuario_id = ? AND origen_tipo = ? AND origen_id = ? 
+                    AND destino_tipo = ? AND destino_id = ?
+                ");
+                $stmt->execute([$usuarioId, $origenTipo, $origenId, $destinoTipo, $destinoId]);
+
+                if ($stmt->fetchColumn() > 0) {
+                    throw new Exception('Ya tienes una ruta favorita con estos mismos puntos');
+                }
+
                 $resultado = $dijkstra->guardarRutaFavorita(
                     $usuarioId,
                     $origenTipo,
                     $origenId,
                     $destinoTipo,
                     $destinoId,
-                    $nombreRuta
+                    trim($nombreRuta)
                 );
 
                 if ($resultado) {
@@ -122,21 +137,57 @@ try {
 
             $resultado = $stmt->execute([$rutaId, $usuarioId]);
 
-            if ($resultado) {
+            if ($resultado && $stmt->rowCount() > 0) {
                 echo json_encode([
                     'success' => true,
                     'mensaje' => 'Ruta favorita eliminada exitosamente'
                 ]);
             } else {
-                throw new Exception('Error al eliminar la ruta favorita');
+                throw new Exception('No se encontró la ruta o no tienes permisos para eliminarla');
+            }
+            break;
+
+        case 'PUT':
+            // Actualizar ruta favorita (método alternativo)
+            $json = file_get_contents('php://input');
+            $data = json_decode($json, true);
+
+            if (!$data) {
+                throw new Exception('Datos JSON requeridos para actualización');
+            }
+
+            $rutaId = $data['ruta_id'] ?? null;
+            $nombreRuta = $data['nombre_ruta'] ?? null;
+
+            if (!$rutaId || !$nombreRuta) {
+                throw new Exception('ID de ruta y nombre requeridos');
+            }
+
+            $stmt = $pdo->prepare("
+                UPDATE RutasFavoritas 
+                SET nombre_ruta = ?, fecha_creacion = fecha_creacion
+                WHERE id = ? AND usuario_id = ?
+            ");
+
+            $resultado = $stmt->execute([trim($nombreRuta), $rutaId, $usuarioId]);
+
+            if ($resultado && $stmt->rowCount() > 0) {
+                echo json_encode([
+                    'success' => true,
+                    'mensaje' => 'Ruta favorita actualizada exitosamente'
+                ]);
+            } else {
+                throw new Exception('No se encontró la ruta o no tienes permisos para modificarla');
             }
             break;
 
         default:
-            throw new Exception('Método no permitido');
+            throw new Exception('Método HTTP no permitido');
     }
 
 } catch (Exception $e) {
+    error_log('Error en rutas_favoritas.php: ' . $e->getMessage());
+
     echo json_encode([
         'success' => false,
         'error' => 'Error en rutas favoritas: ' . $e->getMessage()

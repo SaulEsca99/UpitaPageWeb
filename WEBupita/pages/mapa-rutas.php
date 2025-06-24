@@ -134,6 +134,9 @@ include '../includes/header.php';
         let isDragging = false;
         let lastMouseX, lastMouseY;
 
+        // Configurar rutas base para APIs
+        const BASE_PATH = '/TecnologiasParaElDesarrolloDeAplicacionesWeb/SchoolPathFinder/WEBupita';
+
         // Coordenadas de edificios principales (ejemplo simplificado)
         const edificios = {
             'A1': { x: 200, y: 150, width: 80, height: 60, color: '#3498db', nombre: 'Edificio A1' },
@@ -356,7 +359,7 @@ include '../includes/header.php';
 
         async function cargarLugares() {
             try {
-                const response = await fetch('/WEBupita/api/buscar_lugares.php');
+                const response = await fetch(BASE_PATH + '/api/buscar_lugares.php');
                 const data = await response.json();
 
                 if (data.success) {
@@ -393,6 +396,7 @@ include '../includes/header.php';
                 }
             } catch (error) {
                 console.error('Error cargando lugares:', error);
+                mostrarMensaje('Error cargando lugares: ' + error.message, 'error');
             }
         }
 
@@ -404,7 +408,7 @@ include '../includes/header.php';
             }
 
             try {
-                const response = await fetch(`/WEBupita/api/buscar_lugares.php?q=${encodeURIComponent(termino)}`);
+                const response = await fetch(BASE_PATH + `/api/buscar_lugares.php?q=${encodeURIComponent(termino)}`);
                 const data = await response.json();
 
                 if (data.success) {
@@ -421,12 +425,12 @@ include '../includes/header.php';
             const destino = document.getElementById('destino').value;
 
             if (!origen || !destino) {
-                alert('Por favor selecciona origen y destino');
+                mostrarMensaje('Por favor selecciona origen y destino', 'warning');
                 return;
             }
 
             if (origen === destino) {
-                alert('El origen y destino no pueden ser el mismo');
+                mostrarMensaje('El origen y destino no pueden ser el mismo', 'warning');
                 return;
             }
 
@@ -446,7 +450,7 @@ include '../includes/header.php';
                     }
                 }
 
-                const response = await fetch('/WEBupita/api/calcular_ruta.php', {
+                const response = await fetch(BASE_PATH + '/api/calcular_ruta.php', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -461,6 +465,8 @@ include '../includes/header.php';
                     mostrarInformacionRuta(rutaActual);
                     dibujarMapa();
 
+                    mostrarMensaje('Ruta calculada exitosamente', 'success');
+
                     // Limpiar formulario de favorito
                     if (guardarFavorito && guardarFavorito.checked) {
                         guardarFavorito.checked = false;
@@ -473,11 +479,11 @@ include '../includes/header.php';
                         <?php endif; ?>
                     }
                 } else {
-                    alert('Error: ' + data.error);
+                    mostrarMensaje('Error: ' + data.error, 'error');
                 }
             } catch (error) {
                 console.error('Error calculando ruta:', error);
-                alert('Error al calcular la ruta');
+                mostrarMensaje('Error al calcular la ruta: ' + error.message, 'error');
             }
         }
 
@@ -513,12 +519,13 @@ include '../includes/header.php';
             document.getElementById('origen').value = '';
             document.getElementById('destino').value = '';
             dibujarMapa();
+            mostrarMensaje('Mapa limpiado', 'info');
         }
 
         <?php if (isset($_SESSION['usuario_id'])): ?>
         async function cargarRutasFavoritas() {
             try {
-                const response = await fetch('/WEBupita/api/rutas_favoritas.php');
+                const response = await fetch(BASE_PATH + '/api/rutas_favoritas.php');
                 const data = await response.json();
 
                 const container = document.getElementById('rutasFavoritas');
@@ -561,6 +568,48 @@ include '../includes/header.php';
             calcularRuta();
         }
         <?php endif; ?>
+
+        function mostrarMensaje(mensaje, tipo) {
+            const colores = {
+                'success': { bg: '#d4edda', color: '#155724' },
+                'error': { bg: '#f8d7da', color: '#721c24' },
+                'warning': { bg: '#fff3cd', color: '#856404' },
+                'info': { bg: '#d1ecf1', color: '#0c5460' }
+            };
+
+            const estilo = colores[tipo] || colores.info;
+
+            const div = document.createElement('div');
+            div.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: ${estilo.bg};
+            color: ${estilo.color};
+            padding: 15px 20px;
+            border-radius: 4px;
+            z-index: 1000;
+            max-width: 300px;
+            animation: slideIn 0.3s ease-out;
+        `;
+
+            div.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span>${mensaje}</span>
+                <button onclick="this.parentElement.parentElement.remove()" style="background: none; border: none; color: ${estilo.color}; cursor: pointer; margin-left: 10px;">
+                    &times;
+                </button>
+            </div>
+        `;
+
+            document.body.appendChild(div);
+
+            setTimeout(() => {
+                if (div.parentElement) {
+                    div.remove();
+                }
+            }, 3000);
+        }
     </script>
 
     <style>
@@ -595,6 +644,11 @@ include '../includes/header.php';
                 opacity: 1;
                 transform: translateY(0);
             }
+        }
+
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
         }
     </style>
 
