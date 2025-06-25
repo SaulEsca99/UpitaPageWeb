@@ -209,8 +209,9 @@ class Dijkstra {
      */
     private function obtenerDetallesRuta($ruta) {
         $detalles = [];
-
-        foreach ($ruta as $nodo) {
+        
+        for ($i = 0; $i < count($ruta); $i++) {
+            $nodo = $ruta[$i];
             list($tipo, $id) = explode('_', $nodo);
 
             try {
@@ -234,38 +235,41 @@ class Dijkstra {
                     $stmt->execute([$id]);
                 }
 
-                $punto = $stmt->fetch(PDO::FETCH_ASSOC);
-
-                if ($punto) {
+                $info = $stmt->fetch();
+                
+                if ($info) {
+                    // Calcular distancia al siguiente punto
+                    $distancia = 0;
+                    if ($i < count($ruta) - 1) {
+                        $siguienteNodo = $ruta[$i + 1];
+                        if (isset($this->grafo[$nodo][$siguienteNodo])) {
+                            $distancia = $this->grafo[$nodo][$siguienteNodo];
+                        }
+                    }
+                    
                     $detalles[] = [
                         'tipo' => $tipo,
-                        'id' => $id,
-                        'codigo' => $punto['codigo'],
-                        'nombre' => $punto['nombre'],
-                        'piso' => (int)$punto['piso'],
-                        'edificio' => (int)$punto['idEdificio'],
-                        'edificio_nombre' => $punto['edificio_nombre'],
-                        'coordenada_x' => floatval($punto['coordenada_x']),
-                        'coordenada_y' => floatval($punto['coordenada_y'])
-                    ];
-                } else {
-                    // Agregar punto genérico si no se encuentra en BD
-                    $detalles[] = [
-                        'tipo' => $tipo,
-                        'id' => $id,
-                        'codigo' => 'N/A',
-                        'nombre' => 'Punto no encontrado',
-                        'piso' => 0,
-                        'edificio' => 0,
-                        'edificio_nombre' => 'Desconocido',
-                        'coordenada_x' => 0,
-                        'coordenada_y' => 0
+                        'codigo' => $info['codigo'],
+                        'nombre' => $info['nombre'],
+                        'descripcion' => $info['codigo'] . ' - ' . $info['nombre'],
+                        'distancia' => round($distancia, 2),
+                        'piso' => $info['piso'],
+                        'edificio' => $info['edificio_nombre'],
+                        'coordenada_x' => $info['coordenada_x'],
+                        'coordenada_y' => $info['coordenada_y']
                     ];
                 }
             } catch (Exception $e) {
-                error_log('Error obteniendo detalles de punto ' . $nodo . ': ' . $e->getMessage());
-                // Continuar con el siguiente punto
-                continue;
+                error_log('Error obteniendo detalles del nodo ' . $nodo . ': ' . $e->getMessage());
+                $detalles[] = [
+                    'tipo' => $tipo,
+                    'codigo' => 'Desconocido',
+                    'nombre' => 'Punto no encontrado',
+                    'descripcion' => 'Error al cargar información',
+                    'distancia' => 0,
+                    'piso' => 0,
+                    'edificio' => 'Desconocido'
+                ];
             }
         }
 
@@ -273,217 +277,26 @@ class Dijkstra {
     }
 
     /**
-     * Obtiene todos los lugares disponibles para rutas
+     * Obtiene todos los lugares disponibles para búsqueda
      */
     public function obtenerLugaresDisponibles() {
         try {
             $stmt = $this->pdo->query("
-                SELECT tipo, id, codigo, nombre, piso, idEdificio
-                FROM vista_lugares
+                SELECT 'aula' as tipo, idAula as id, numeroAula as codigo, nombreAula as nombre, 
+                       piso, idEdificio, coordenada_x, coordenada_y
+                FROM Aulas 
+                WHERE coordenada_x IS NOT NULL AND coordenada_y IS NOT NULL
+                UNION ALL
+                SELECT 'punto' as tipo, id, nombre as codigo, nombre, 
+                       piso, idEdificio, coordenada_x, coordenada_y
+                FROM PuntosConexion
                 ORDER BY codigo
             ");
-
+            
             return $stmt->fetchAll(PDO::FETCH_ASSOC);
         } catch (Exception $e) {
-            error_log('Error obteniendo lugares disponibles: ' . $e->getMessage());
+            error_log('Error obteniendo lugares: ' . $e->getMessage());
             return [];
-        }
-    }
-
-    /**
-     * Busca lugares por término de búsqueda
-     */
-    public function buscarLugares($termino) {
-        try {
-            $stmt = $this->pdo->prepare("
-                SELECT tipo, id, codigo, nombre, piso, idEdificio
-                FROM vista_lugares
-                WHERE codigo LIKE ? OR nombre LIKE ?
-                ORDER BY codigo
-                LIMIT 50
-            ");
-
-            $termino = '%' . $termino . '%';
-            $stmt->execute([$termino, $termino]);
-
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
-        } catch (Exception $e) {
-            error_log('Error buscando lugares: ' . $e->getMessage());
-            return [];
-        }
-    }
-
-    /**
-     * Guarda una ruta como favorita para un usuario
-     */
-    public function guardarRutaFavorita($usuarioId, $origenTipo, $origenId, $destinoTipo, $destinoId, $nombreRuta) {
-        try {
-            $stmt = $this->pdo->prepare("
-                INSERT INTO RutasFavoritas (usuario_id, origen_tipo, origen_id, destino_tipo, destino_id, nombre_ruta)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ");
-
-            return $stmt->execute([$usuarioId, $origenTipo, $origenId, $destinoTipo, $destinoId, $nombreRuta]);
-        } catch (Exception $e) {
-            error_log('Error guardando ruta favorita: ' . $e->getMessage());
-            return false;
-        }
-    }
-
-    /**
-     * Obtiene las rutas favoritas de un usuario
-     */
-    public function obtenerRutasFavoritas($usuarioId) {
-        try {
-            $stmt = $this->pdo->prepare("
-                SELECT rf.*,
-                       COALESCE(ao.numeroAula, po.nombre) as origen_codigo,
-                       COALESCE(ao.nombreAula, po.nombre) as origen_nombre,
-                       COALESCE(ad.numeroAula, pd.nombre) as destino_codigo,
-                       COALESCE(ad.nombreAula, pd.nombre) as destino_nombre
-                FROM RutasFavoritas rf
-                LEFT JOIN Aulas ao ON rf.origen_tipo = 'aula' AND rf.origen_id = ao.idAula
-                LEFT JOIN PuntosConexion po ON rf.origen_tipo = 'punto' AND rf.origen_id = po.id
-                LEFT JOIN Aulas ad ON rf.destino_tipo = 'aula' AND rf.destino_id = ad.idAula
-                LEFT JOIN PuntosConexion pd ON rf.destino_tipo = 'punto' AND rf.destino_id = pd.id
-                WHERE rf.usuario_id = ?
-                ORDER BY rf.fecha_creacion DESC
-            ");
-
-            $stmt->execute([$usuarioId]);
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
-        } catch (Exception $e) {
-            error_log('Error obteniendo rutas favoritas: ' . $e->getMessage());
-            return [];
-        }
-    }
-
-    /**
-     * Elimina una ruta favorita
-     */
-    public function eliminarRutaFavorita($usuarioId, $rutaId) {
-        try {
-            $stmt = $this->pdo->prepare("
-                DELETE FROM RutasFavoritas 
-                WHERE id = ? AND usuario_id = ?
-            ");
-
-            return $stmt->execute([$rutaId, $usuarioId]);
-        } catch (Exception $e) {
-            error_log('Error eliminando ruta favorita: ' . $e->getMessage());
-            return false;
-        }
-    }
-
-    /**
-     * Actualiza el nombre de una ruta favorita
-     */
-    public function actualizarNombreRutaFavorita($usuarioId, $rutaId, $nuevoNombre) {
-        try {
-            $stmt = $this->pdo->prepare("
-                UPDATE RutasFavoritas 
-                SET nombre_ruta = ? 
-                WHERE id = ? AND usuario_id = ?
-            ");
-
-            return $stmt->execute([$nuevoNombre, $rutaId, $usuarioId]);
-        } catch (Exception $e) {
-            error_log('Error actualizando nombre de ruta favorita: ' . $e->getMessage());
-            return false;
-        }
-    }
-
-    /**
-     * Obtiene estadísticas del sistema de rutas
-     */
-    public function obtenerEstadisticas() {
-        try {
-            $stats = [];
-
-            // Total de aulas
-            $stmt = $this->pdo->query("SELECT COUNT(*) FROM Aulas");
-            $stats['total_aulas'] = $stmt->fetchColumn();
-
-            // Total de puntos de conexión
-            $stmt = $this->pdo->query("SELECT COUNT(*) FROM PuntosConexion");
-            $stats['total_puntos'] = $stmt->fetchColumn();
-
-            // Total de rutas
-            $stmt = $this->pdo->query("SELECT COUNT(*) FROM Rutas");
-            $stats['total_rutas'] = $stmt->fetchColumn();
-
-            // Total de edificios
-            $stmt = $this->pdo->query("SELECT COUNT(*) FROM Edificios");
-            $stats['total_edificios'] = $stmt->fetchColumn();
-
-            // Rutas favoritas por usuario
-            $stmt = $this->pdo->query("
-                SELECT u.nombre, COUNT(rf.id) as total_favoritos
-                FROM usuarios u
-                LEFT JOIN RutasFavoritas rf ON u.id = rf.usuario_id
-                GROUP BY u.id
-                ORDER BY total_favoritos DESC
-                LIMIT 10
-            ");
-            $stats['top_usuarios'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-            return $stats;
-        } catch (Exception $e) {
-            error_log('Error obteniendo estadísticas: ' . $e->getMessage());
-            return [];
-        }
-    }
-
-    /**
-     * Valida la integridad del grafo
-     */
-    public function validarGrafo() {
-        try {
-            $this->construirGrafo();
-
-            $problemas = [];
-
-            // Verificar nodos sin conexiones salientes
-            $nodosAislados = [];
-            foreach ($this->obtenerTodosLosNodos() as $nodo) {
-                if (!isset($this->grafo[$nodo]) || empty($this->grafo[$nodo])) {
-                    $nodosAislados[] = $nodo;
-                }
-            }
-
-            if (!empty($nodosAislados)) {
-                $problemas[] = 'Nodos sin conexiones salientes: ' . implode(', ', $nodosAislados);
-            }
-
-            // Verificar conexiones bidireccionales
-            $conexionesUnidireccionales = [];
-            foreach ($this->grafo as $origen => $vecinos) {
-                foreach ($vecinos as $destino => $peso) {
-                    if (!isset($this->grafo[$destino][$origen])) {
-                        $conexionesUnidireccionales[] = "$origen -> $destino";
-                    }
-                }
-            }
-
-            if (!empty($conexionesUnidireccionales)) {
-                $problemas[] = 'Conexiones unidireccionales: ' . implode(', ', $conexionesUnidireccionales);
-            }
-
-            return [
-                'valido' => empty($problemas),
-                'problemas' => $problemas,
-                'total_nodos' => count($this->obtenerTodosLosNodos()),
-                'total_conexiones' => array_sum(array_map('count', $this->grafo))
-            ];
-
-        } catch (Exception $e) {
-            error_log('Error validando grafo: ' . $e->getMessage());
-            return [
-                'valido' => false,
-                'problemas' => ['Error interno: ' . $e->getMessage()],
-                'total_nodos' => 0,
-                'total_conexiones' => 0
-            ];
         }
     }
 }
