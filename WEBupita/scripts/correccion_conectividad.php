@@ -1,6 +1,6 @@
 <?php
 // Ruta: WEBupita/scripts/correccion_conectividad.php
-// MÓDULO 2: Corrección de problemas de conectividad identificados
+// MÓDULO 2: Corrección de problemas de conectividad identificado
 
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
